@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+@theme {
+  /* --- THE NAVY PALETTE (Registered as Tailwind Colors) --- */
+  /* Usage: bg-navy-900, text-navy-800, border-navy-900 */
+  
+  --color-navy-900: #021024; /* Deepest Navy (Backgrounds) */
+  --color-navy-800: #052659; /* Card/Sidebar Navy */
+  
+  /* --- THE BLUE ACCENTS --- */
+  --color-blue-500: #5483B3; /* Primary Actions/Buttons */
+  --color-blue-400: #7DA0CA; /* Secondary Text/Icons */
+  --color-blue-100: #C1E8FF; /* Highlights/Light Backgrounds */
+
+  /* --- UI CONSTANTS (Reduced for tighter control) --- */
+  /* Previously 1rem -> Now 0.75rem for tighter inputs */
+  --radius-xl: 0.75rem; 
+  /* Previously 1.5rem -> Now 1rem for tighter cards */
+  --radius-2xl: 1rem;   
+  /* Previously 2rem -> Now 1.75rem for main container */
+  --radius-3xl: 1.75rem; 
+  
+  /* --- ANIMATIONS --- */
+  --animate-shimmer: shimmer 2s linear infinite;
+  
+  @keyframes shimmer {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(100%); }
+  }
+}
+
+@layer base {
+  html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    /* Prevents horizontal scroll on small mobile devices */
+    overflow-x: hidden; 
+  }
+
+  body {
+    /* Uses the navy-900 variable directly */
+    background-color: var(--color-navy-900);
+    color: white;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* --- GLOBAL FORM CONTROL STYLES --- */
+  /* This creates a standard size for inputs so they are responsive automatically */
+  input {
+    font-size: 16px; /* Prevents auto-zoom on iPhone */
+  }
+}
+
+/* --- CUSTOM UTILITIES FOR CONTROLS --- */
+@layer components {
+  /* Use this class on your input containers to enforce consistent size */
+  .control-container {
+    @apply flex items-center gap-4 px-4 py-3 md:px-5 md:py-4 rounded-2xl border-2 transition-all duration-300 cursor-text;
+    /* Responsive Height Control: Smaller on mobile, standard on desktop */
+    height: 64px; 
+  }
+  @media (min-width: 768px) {
+    .control-container {
+      height: 80px;
+    }
+  }
+
+  /* The actual input field */
+  .control-input {
+    @apply w-full bg-transparent border-none p-0 font-bold focus:ring-0 focus:outline-none placeholder-gray-300 leading-none;
+    /* Responsive Text Size */
+    font-size: 1rem;
+  }
+  @media (min-width: 768px) {
+    .control-input {
+      font-size: 1.125rem; /* text-lg */
+    }
+  }
+}

@@ -1,0 +1,38 @@
+# -------------------------
+# Core Framework
+# -------------------------
+fastapi==0.110.0
+uvicorn[standard]==0.29.0
+
+# -------------------------
+# Database
+# -------------------------
+sqlalchemy==2.0.29
+psycopg2-binary==2.9.9
+
+# -------------------------
+# Authentication & Security
+# -------------------------
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# -------------------------
+# CSV / Data Processing
+# -------------------------
+pandas==2.2.2
+
+# -------------------------
+# Channel Integrations
+# -------------------------
+twilio==9.0.4
+
+# -------------------------
+# Utilities
+# -------------------------
+python-multipart==0.0.9
+email-validator==2.1.1
+
+cryptography==42.0.5
+
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
