@@ -1,10 +1,13 @@
+import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 
 // Components
+
 import Sidebar from './components/Sidebar';
 import Header from './components/Header'; 
 // Pages
+
 import Login from './pages/Login';
 import DashboardLayout from './pages/Dashboard';
 import TemplatesList from './pages/TemplatesList'; 
@@ -43,6 +46,7 @@ const ProtectedLayout = () => {
 
 export default function App() {
   return (
+
     <Router>
       <AuthProvider>
         <Routes>
