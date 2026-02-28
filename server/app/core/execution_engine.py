@@ -28,7 +28,7 @@ from app.core.progress_manager import progress_manager
 
 ROW_PARALLELISM = 10
 MAX_RETRIES = 2
-LOG_BATCH_SIZE = 50
+LOG_BATCH_SIZE = 10
 MAX_ROWS_ALLOWED = 2000
 PROGRESS_BROADCAST_INTERVAL = 10
 
@@ -175,82 +175,37 @@ async def execute_campaign(execution_id: int):
         if not template or not integration:
             raise Exception("Missing template or integration.")
 
-        if not execution.file_path or not os.path.exists(execution.file_path):
-            raise Exception("Execution file not found.")
-
         df = pd.read_csv(execution.file_path, dtype=str)
 
-        if df.empty:
-            execution.status = "completed"
-            execution.total_count = 0
-            execution.completed_at = datetime.utcnow()
-            execution.execution_duration_seconds = 0
-            db.commit()
-            return
-
-        if len(df) > MAX_ROWS_ALLOWED:
-            raise Exception(f"Max {MAX_ROWS_ALLOWED} rows allowed.")
-
-        df.columns = (
-            df.columns
-            .str.replace("\ufeff", "", regex=False)
-            .str.strip()
-            .str.lower()
-        )
+        df.columns = df.columns.str.strip().str.lower()
 
         recipient_column = normalize_column(execution.recipient_column)
 
-        # Build schema
-        schema = []
-        for col in df.columns:
-            if pd.to_numeric(df[col], errors="coerce").notna().all():
-                schema.append({"name": col, "type": "number"})
-            else:
-                schema.append({"name": col, "type": "string"})
-
-        # Validate compatibility
-        is_valid, errors = validate_dataset_compatibility(
-            template,
-            schema,
-            recipient_column
-        )
-
-        if not is_valid:
-            raise Exception(str(errors))
-
-        # Apply filter
         filtered_df = apply_filter(
             df,
             template.filter_dsl or {},
-            schema
+            []
         )
 
-        execution.total_count = len(filtered_df)
+        records = filtered_df.to_dict(orient="records")
+
+        execution.total_count = len(records)
         execution.processed_count = 0
         execution.success_count = 0
         execution.failure_count = 0
         db.commit()
-
-        if execution.total_count == 0:
-            execution.status = "completed"
-            execution.completed_at = datetime.utcnow()
-            db.commit()
-            return
 
         channel = get_channel(integration.channel_type, integration)
         rate_limiter = AsyncRateLimiter(
             integration.rate_limit_per_minute or 60
         )
 
-        records = filtered_df.to_dict(orient="records")
-
         log_batch = []
 
         for idx, row in enumerate(records, start=1):
 
-            db.refresh(execution)
             if execution.status == "cancelled":
-                return
+                break
 
             result = await process_row(
                 row,
@@ -260,92 +215,89 @@ async def execute_campaign(execution_id: int):
                 rate_limiter,
             )
 
-            log = ExecutionLog(
-                campaign_execution_id=execution.id,
-                channel_type=execution.channel_type,
-                recipient_value=result["recipient"],
-                rendered_message=result["rendered_message"],
-                delivery_status="delivered" if result["success"] else "failed",
-                is_failed=not result["success"],
-                provider_response_message=result["error"],
-                retry_count=result["retry_count"],
-                is_retried=result["retry_count"] > 0,
-                sent_at=datetime.utcnow() if result["success"] else None
+            log_batch.append(
+                ExecutionLog(
+                    campaign_execution_id=execution.id,
+                    channel_type=execution.channel_type,
+                    recipient_value=result["recipient"],
+                    rendered_message=result["rendered_message"],
+                    delivery_status="delivered" if result["success"] else "failed",
+                    is_failed=not result["success"],
+                    provider_response_message=result["error"],
+                    retry_count=result["retry_count"],
+                    is_retried=result["retry_count"] > 0,
+                    sent_at=datetime.utcnow() if result["success"] else None
+                )
             )
 
-            log_batch.append(log)
+            execution.processed_count += 1
 
             if result["success"]:
                 execution.success_count += 1
             else:
                 execution.failure_count += 1
 
-            execution.processed_count += 1
+            # Commit every N rows
+            if idx % LOG_BATCH_SIZE == 0 or idx == len(records):
 
-            # Commit counters every 10 rows
-            if idx % 10 == 0:
-                db.commit()
-
-            # Batch insert logs
-            if len(log_batch) >= LOG_BATCH_SIZE:
-                try:
-                    db.bulk_save_objects(log_batch)
-                    db.commit()
-                except IntegrityError:
-                    db.rollback()
+                db.bulk_save_objects(log_batch)
                 log_batch.clear()
 
-            # Broadcast progress
-            if idx % PROGRESS_BROADCAST_INTERVAL == 0:
-                await progress_manager.broadcast(execution.id, {
-                    "status": "running",
-                    "processed": execution.processed_count,
-                    "total": execution.total_count,
-                    "success": execution.success_count,
-                    "failed": execution.failure_count,
-                    "progress_percent": round(
-                        (execution.processed_count / execution.total_count) * 100,
-                        2
-                    )
-                })
-
-        if log_batch:
-            try:
-                db.bulk_save_objects(log_batch)
                 db.commit()
-            except IntegrityError:
-                db.rollback()
 
-        db.commit()
+                # Broadcast AFTER commit (important)
+                await progress_manager.broadcast(
+                    execution.id,
+                    {
+                        "status": "running",
+                        "processed": execution.processed_count,
+                        "total": execution.total_count,
+                        "success": execution.success_count,
+                        "failed": execution.failure_count,
+                        "progress_percent": round(
+                            (execution.processed_count / execution.total_count) * 100,
+                            2
+                        )
+                    }
+                )
 
         execution.status = "completed"
         execution.completed_at = datetime.utcnow()
         execution.execution_duration_seconds = int(
             (execution.completed_at - execution.started_at).total_seconds()
         )
+
         db.commit()
 
-        await progress_manager.broadcast(execution.id, {
-            "status": "completed",
-            "processed": execution.processed_count,
-            "total": execution.total_count,
-            "success": execution.success_count,
-            "failed": execution.failure_count,
-            "progress_percent": 100
-        })
+        await progress_manager.broadcast(
+            execution.id,
+            {
+                "status": "completed",
+                "processed": execution.processed_count,
+                "total": execution.total_count,
+                "success": execution.success_count,
+                "failed": execution.failure_count,
+                "progress_percent": 100
+            }
+        )
 
     except Exception as e:
+
         if execution:
             execution.status = "failed"
             execution.failure_reason = str(e)
             db.commit()
 
-            await progress_manager.broadcast(execution.id, {
-                "status": "failed",
-                "error": str(e)
-            })
+            await progress_manager.broadcast(
+                execution.id,
+                {
+                    "status": "failed",
+                    "error": str(e)
+                }
+            )
 
     finally:
+
         try:
             if execution and execution.file_path and os.path.exists(execution.file_path):
                 os.remove(execution.file_path)

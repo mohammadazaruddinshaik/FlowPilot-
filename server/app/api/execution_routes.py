@@ -190,7 +190,6 @@ async def validate_execution(
 # =====================================================
 # 2️⃣ RUN EXECUTION
 # =====================================================
-
 @router.post("/run")
 async def run_execution(
     logical_id: str = Form(...),
@@ -225,14 +224,26 @@ async def run_execution(
     if not integration:
         raise HTTPException(400, "Invalid or inactive integration.")
 
-    # Save file
+    # 🔥 Prevent duplicate active execution
+    existing = db.query(CampaignExecution).filter(
+        CampaignExecution.campaign_template_id == template.id,
+        CampaignExecution.organization_id == current_user.organization_id,
+        CampaignExecution.status.in_(["queued", "running"])
+    ).first()
+
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail="An execution is already running."
+        )
+
+    # Save uploaded file
     unique_filename = f"{uuid.uuid4()}_{file.filename}"
     file_path = os.path.join(EXECUTION_UPLOAD_DIR, unique_filename)
 
     with open(file_path, "wb") as buffer:
         buffer.write(await file.read())
 
-    # Create execution record
     execution = CampaignExecution(
         organization_id=current_user.organization_id,
         campaign_template_id=template.id,
@@ -253,7 +264,6 @@ async def run_execution(
     db.commit()
     db.refresh(execution)
 
-    # Start background execution
     threading.Thread(
         target=run_campaign_execution,
         args=(execution.id,),

@@ -1,10 +1,11 @@
 from dotenv import load_dotenv
 import os
 
-load_dotenv()  
+load_dotenv()
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.database import engine
 from app.models import db_models
@@ -19,18 +20,55 @@ from app.api import dashboard_routes
 from app.api.ws_routes import router as ws_router
 
 
+# =====================================================
+# App Initialization
+# =====================================================
 
-db_models.Base.metadata.create_all(bind=engine)
+app = FastAPI(
+    title="AudienceOS SaaS",
+    version="1.0.0"
+)
 
-app = FastAPI(title="AudienceOS SaaS")
+
+# =====================================================
+# CORS (TEMPORARY OPEN FOR DEPLOYMENT)
+# =====================================================
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # ⚠️ Restrict later in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# =====================================================
+# Health Check (IMPORTANT for Render)
+# =====================================================
+
+@app.get("/")
+def health_check():
+    return {"status": "ok", "service": "AudienceOS Backend"}
+
+
+@app.get("/health")
+def health():
+    return {"status": "healthy"}
+
+
+# =====================================================
+# Database Init (Run Once at Startup)
+# =====================================================
+
+@app.on_event("startup")
+def startup():
+    db_models.Base.metadata.create_all(bind=engine)
+
+
+# =====================================================
+# Register Routers
+# =====================================================
 
 app.include_router(auth_router)
 app.include_router(dataset_router)

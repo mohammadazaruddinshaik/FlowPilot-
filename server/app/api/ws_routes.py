@@ -21,10 +21,6 @@ router = APIRouter()
 @router.websocket("/ws/execution/{execution_id}")
 async def execution_ws(websocket: WebSocket, execution_id: int):
 
-    # ---------------------------------------------
-    # 1️⃣ Extract Token from Query Params
-    # ws://localhost:8000/ws/execution/1?token=XYZ
-    # ---------------------------------------------
     query_params = parse_qs(websocket.url.query)
     token = query_params.get("token", [None])[0]
 
